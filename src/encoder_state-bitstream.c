@@ -590,6 +590,70 @@ static void encoder_state_write_picture_timing_sei_message(encoder_state_t * con
   }
 }
 
+static void write_ue7(bitstream_t * const stream, uint32_t data) {
+  uint8_t bytes[8];
+  uint8_t bytes_used = 0;
+  while (data > 127) {
+    bytes[bytes_used] = data & 0x7F;
+    data >>= 7;
+    bytes_used++;
+  }
+  bytes[bytes_used] = data & 0x7F;
+  bytes_used++;
+  while (bytes_used--) {
+    WRITE_U(stream, bytes[bytes_used] | (bytes_used ? 0x80 : 0x00), 8, "data");
+  }
+}
+
+static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const main_state) {
+  const encoder_control * const encoder = main_state->encoder_control;
+  bitstream_t * const stream = &main_state->stream;
+  uint8_t byte;
+
+  WRITE_U(stream, 0x425047fb, 32, "file_magic");
+
+  WRITE_U(stream, 1, 3, "pixel_format"); //1 : 4:2:0
+  WRITE_U(stream, 0, 1, "alpha_present_flag");
+  WRITE_U(stream, 0, 4, "bit_depth_minus_8");
+
+  WRITE_U(stream, 0, 4, "color_space"); //0 : YCbCr (CCIR 601, same as JPEG)
+  WRITE_U(stream, 0, 1, "extension_present_flag");
+  WRITE_U(stream, 0, 3, "reserved_zeros");
+
+  write_ue7(stream, encoder->in.width);
+  write_ue7(stream, encoder->in.height);
+
+  write_ue7(stream, main_state->children[0].stream.mem.output_length + 2);
+
+  write_ue7(stream, 3); //hevc_header_length  
+  WRITE_UE(stream, MIN_SIZE - 3, "log2_min_luma_coding_block_size_minus3");
+  WRITE_UE(stream, MAX_DEPTH, "log2_diff_max_min_luma_coding_block_size");
+  WRITE_UE(stream, 0, "log2_min_transform_block_size_minus2");
+  WRITE_UE(stream, 3, "log2_diff_max_min_transform_block_size");
+  WRITE_UE(stream, encoder->tr_depth_intra, "max_transform_hierarchy_depth_intra");
+  WRITE_U(stream, 1, 1, "sample_adaptive_offset_enabled_flag");
+  WRITE_U(stream, 0, 1, "pcm_enabled_flag");
+  WRITE_U(stream, 0, 1, "strong_intra_smoothing_enabled_flag");
+  WRITE_U(stream, 0, 1, "sps_extension_present_flag");
+  bitstream_align_zero(stream);
+
+  // Skip first sync code (0x00 0x00 0x01)
+
+  // Picture Parameter Set (PPS)
+  byte = NAL_PPS_NUT << 1;
+  bitstream_writebyte(stream, byte);
+  // 5bits of nuh_layer_id + nuh_temporal_id_plus1(3)
+  byte = (0 + 1) & 7;
+  bitstream_writebyte(stream, byte);
+
+  encoder_state_write_bitstream_pic_parameter_set(main_state);
+  bitstream_align(stream);
+
+  // The frame
+  nal_write(stream, NAL_IDR_W_RADL, 0, 0);
+  bitstream_append(&main_state->stream, &main_state->children[0].stream);
+  bitstream_clear(&main_state->children[0].stream);
+}
 
 static void encoder_state_entry_points_explore(const encoder_state_t * const state, int * const r_count, int * const r_max_length) {
   int i;
@@ -839,6 +903,10 @@ static void encoder_state_write_bitstream_main(encoder_state_t * const state)
     encoder_state_write_bitstream_aud(state);
   }
   
+  // Hacky BPG implementation
+  encoder_state_write_bitstream_bpg_headers(main_state);
+  return;
+
   if ((encoder->vps_period > 0 && state->global->frame % encoder->vps_period == 0)
       || state->global->frame == 0)
   {
