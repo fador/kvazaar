@@ -70,6 +70,8 @@ else ifeq (, $(filter-out ppc ppc64, $(ARCH)))
   TARGET_CPU_ARCH := ppc
 else ifeq (, $(filter-out armv7l armv6l, $(ARCH)))
   TARGET_CPU_ARCH := arm
+  CFLAGS += -mfpu=neon-vfpv4
+  LDFLAGS += -mfpu=neon-vfpv4
 else
   TARGET_CPU_ARCH := x86
 endif
