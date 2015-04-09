@@ -623,7 +623,7 @@ static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const mai
   write_ue7(stream, encoder->in.width);
   write_ue7(stream, encoder->in.height);
 
-  write_ue7(stream, main_state->children[0].stream.mem.output_length + 2);
+  write_ue7(stream, main_state->children[0].stream.mem.output_length + 2); //ToDo: add PPS len
 
   write_ue7(stream, 3); //hevc_header_length  
   WRITE_UE(stream, MIN_SIZE - 3, "log2_min_luma_coding_block_size_minus3");
@@ -631,7 +631,7 @@ static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const mai
   WRITE_UE(stream, 0, "log2_min_transform_block_size_minus2");
   WRITE_UE(stream, 3, "log2_diff_max_min_transform_block_size");
   WRITE_UE(stream, encoder->tr_depth_intra, "max_transform_hierarchy_depth_intra");
-  WRITE_U(stream, 1, 1, "sample_adaptive_offset_enabled_flag");
+  WRITE_U(stream, main_state->encoder_control->sao_enable, 1, "sample_adaptive_offset_enabled_flag");
   WRITE_U(stream, 0, 1, "pcm_enabled_flag");
   WRITE_U(stream, 0, 1, "strong_intra_smoothing_enabled_flag");
   WRITE_U(stream, 0, 1, "sps_extension_present_flag");
