@@ -633,7 +633,27 @@ static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const mai
   write_ue7(stream, encoder->in.width);
   write_ue7(stream, encoder->in.height);
 
-  write_ue7(stream, main_state->children[0].stream.len + 2); //ToDo: add PPS len
+  /*
+    Grab PPS length
+  // ToDo: better options than writing PPS twice?
+  */
+  encoder_state_t temp_state;
+  temp_state.encoder_control = (encoder_control_t*)malloc(sizeof(encoder_control_t));
+  memcpy((encoder_control_t*)temp_state.encoder_control, encoder, sizeof(encoder_control_t));
+  ((encoder_control_t*)temp_state.encoder_control)->cfg = (kvz_config*)malloc(sizeof(kvz_config));
+  memcpy((kvz_config*)((encoder_control_t*)temp_state.encoder_control)->cfg, encoder->cfg, sizeof(kvz_config));
+    kvz_bitstream_init(&temp_state.stream);
+  encoder_state_write_bitstream_pic_parameter_set(&temp_state);
+  kvz_bitstream_align(&temp_state.stream);
+  int PPS_len = temp_state.stream.len;
+  kvz_bitstream_clear(&temp_state.stream);
+  FREE_POINTER(((encoder_control_t*)temp_state.encoder_control)->cfg);
+  FREE_POINTER(temp_state.encoder_control);
+  /*
+   End PPS length grabbing
+  */
+
+  write_ue7(stream, main_state->children[0].stream.len + PPS_len + 2);
 
   write_ue7(stream, 3); //hevc_header_length  
   WRITE_UE(stream, MIN_SIZE - 3, "log2_min_luma_coding_block_size_minus3");
