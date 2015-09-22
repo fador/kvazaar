@@ -605,8 +605,18 @@ static void write_ue7(bitstream_t * const stream, uint32_t data) {
   }
 }
 
+/**
+* \brief Move child state bitstreams to the parent stream.
+*/
+static void encoder_state_write_bitstream_children(encoder_state_t * const state) {
+  for (int i = 0; state->children[i].encoder_control; ++i) {
+    kvz_encoder_state_write_bitstream(&state->children[i]);
+    kvz_bitstream_move(&state->stream, &state->children[i].stream);
+  }
+}
+
 static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const main_state) {
-  const encoder_control * const encoder = main_state->encoder_control;
+  const encoder_control_t * const encoder = main_state->encoder_control;
   bitstream_t * const stream = &main_state->stream;
   uint8_t byte;
 
@@ -623,7 +633,7 @@ static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const mai
   write_ue7(stream, encoder->in.width);
   write_ue7(stream, encoder->in.height);
 
-  write_ue7(stream, main_state->children[0].stream.mem.output_length + 2); //ToDo: add PPS len
+  write_ue7(stream, main_state->children[0].stream.len + 2); //ToDo: add PPS len
 
   write_ue7(stream, 3); //hevc_header_length  
   WRITE_UE(stream, MIN_SIZE - 3, "log2_min_luma_coding_block_size_minus3");
@@ -635,24 +645,23 @@ static void encoder_state_write_bitstream_bpg_headers(encoder_state_t* const mai
   WRITE_U(stream, 0, 1, "pcm_enabled_flag");
   WRITE_U(stream, 0, 1, "strong_intra_smoothing_enabled_flag");
   WRITE_U(stream, 0, 1, "sps_extension_present_flag");
-  bitstream_align_zero(stream);
+  kvz_bitstream_align_zero(stream);
 
   // Skip first sync code (0x00 0x00 0x01)
 
   // Picture Parameter Set (PPS)
   byte = NAL_PPS_NUT << 1;
-  bitstream_writebyte(stream, byte);
+  kvz_bitstream_writebyte(stream, byte);
   // 5bits of nuh_layer_id + nuh_temporal_id_plus1(3)
   byte = (0 + 1) & 7;
-  bitstream_writebyte(stream, byte);
+  kvz_bitstream_writebyte(stream, byte);
 
   encoder_state_write_bitstream_pic_parameter_set(main_state);
-  bitstream_align(stream);
+  kvz_bitstream_align(stream);
 
   // The frame
-  nal_write(stream, NAL_IDR_W_RADL, 0, 0);
-  bitstream_append(&main_state->stream, &main_state->children[0].stream);
-  bitstream_clear(&main_state->children[0].stream);
+  kvz_nal_write(stream, NAL_IDR_W_RADL, 0, 0);
+  encoder_state_write_bitstream_children(main_state);
 }
 
 static void encoder_state_entry_points_explore(const encoder_state_t * const state, int * const r_count, int * const r_max_length) {
@@ -877,16 +886,7 @@ static void add_checksum(encoder_state_t * const state)
   kvz_bitstream_add_rbsp_trailing_bits(stream);
 }
 
-/**
- * \brief Move child state bitstreams to the parent stream.
- */
-static void encoder_state_write_bitstream_children(encoder_state_t * const state)
-{
-  for (int i = 0; state->children[i].encoder_control; ++i) {
-    kvz_encoder_state_write_bitstream(&state->children[i]);
-    kvz_bitstream_move(&state->stream, &state->children[i].stream);
-  }
-}
+
 
 static void encoder_state_write_bitstream_main(encoder_state_t * const state)
 {
@@ -904,7 +904,7 @@ static void encoder_state_write_bitstream_main(encoder_state_t * const state)
   }
   
   // Hacky BPG implementation
-  encoder_state_write_bitstream_bpg_headers(main_state);
+  encoder_state_write_bitstream_bpg_headers(state);
   return;
 
   if ((encoder->vps_period > 0 && state->global->frame % encoder->vps_period == 0)
